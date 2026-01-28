@@ -32,6 +32,7 @@ src/
 │   └── BookingsList.tsx       # Bookings display
 │
 └── services/
+    ├── config.ts              # Service configuration
     ├── calcomClient.ts        # API client
     ├── availabilityService.ts # Slot fetching
     └── bookingService.ts      # Booking logic

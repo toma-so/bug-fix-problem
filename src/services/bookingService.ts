@@ -1,7 +1,7 @@
 import { BookingRequest, BookingResult, TimeSlot, CalcomBooking } from '@/types';
 import { createBooking, getBooking } from './calcomClient';
 import { getBookingTime } from './availabilityService';
-import { config } from '@/lib/config';
+import { hostTimezone, businessHours } from './config';
 
 // Pagination response format
 interface PaginationInfo {
@@ -69,7 +69,7 @@ export async function bookAppointment(
     
     // Validate that the time is within business hours (9 AM - 5 PM)
     const bookingHour = getHourInTimezone(bookingTime, timeZone);
-    if (bookingHour < config.businessHours.start || bookingHour >= config.businessHours.end) {
+    if (bookingHour < businessHours.start || bookingHour >= businessHours.end) {
       return {
         success: false,
         error: 'Selected time is outside business hours',
@@ -91,7 +91,7 @@ export async function bookAppointment(
     }
     
     // Prepare the booking time for the API
-    bookingTime = convertTimeToTimezone(bookingTime, timeZone, config.hostTimezone);
+    bookingTime = convertTimeToTimezone(bookingTime, timeZone, hostTimezone);
 
     const request: BookingRequest = {
       eventTypeId,
