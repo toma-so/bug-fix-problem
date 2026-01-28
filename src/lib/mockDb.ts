@@ -137,13 +137,33 @@ export function generateSlotsForDateRange(
   return { slots, totalCount: slots.length };
 }
 
-// Get all slots for a date range (raw data)
+// Get all slots for a date range, filtered to remove booked times
 export function getAllSlots(
   startDate: string,
   endDate: string
 ): { data: CalcomSlot[] } {
   const { slots } = generateSlotsForDateRange(startDate, endDate);
-  return { data: slots };
+  const bookings = loadBookings();
+  const bookingsArray = Array.from(bookings.values());
+  
+  // Filter out slots that overlap with existing bookings
+  const availableSlots = slots.filter(slot => {
+    const slotStart = new Date(slot.time).getTime();
+    const slotEnd = slotStart + SLOT_INTERVAL * 60 * 1000; // 30 min slot
+    
+    for (const booking of bookingsArray) {
+      const bookingStart = new Date(booking.start).getTime();
+      const bookingEnd = new Date(booking.end).getTime();
+      
+      // Check if slot overlaps with booking
+      if (slotStart < bookingEnd && slotEnd > bookingStart) {
+        return false; // Slot is booked
+      }
+    }
+    return true; // Slot is available
+  });
+  
+  return { data: availableSlots };
 }
 
 // Get all bookings (for filtering in service layer)
