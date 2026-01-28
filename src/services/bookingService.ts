@@ -1,6 +1,7 @@
 import { BookingRequest, BookingResult, TimeSlot, CalcomBooking } from '@/types';
 import { createBooking, getBooking } from './calcomClient';
 import { getBookingTime } from './availabilityService';
+import { config } from '@/lib/config';
 
 // Pagination response format
 interface PaginationInfo {
@@ -30,6 +31,15 @@ const TIMEZONE_OFFSETS: Record<string, number> = {
 };
 
 /**
+ * Gets the hour in a specific timezone
+ */
+function getHourInTimezone(isoTime: string, timezone: string): number {
+  const date = new Date(isoTime);
+  const offset = TIMEZONE_OFFSETS[timezone] ?? 0;
+  return (date.getUTCHours() + offset + 24) % 24;
+}
+
+/**
  * Converts a time from one timezone to another
  */
 function convertTimeToTimezone(isoTime: string, fromTz: string, toTz: string): string {
@@ -50,18 +60,43 @@ export async function bookAppointment(
   slot: TimeSlot,
   name: string,
   email: string,
-  timeZone: string
+  timeZone: string,
+  duration: number = 30
 ): Promise<BookingResult> {
   try {
     // Get the booking time from the slot
     let bookingTime = getBookingTime(slot);
     
-    // Normalize time for the backend
-    bookingTime = convertTimeToTimezone(bookingTime, timeZone, 'America/New_York');
+    // Validate that the time is within business hours (9 AM - 5 PM)
+    const bookingHour = getHourInTimezone(bookingTime, timeZone);
+    if (bookingHour < config.businessHours.start || bookingHour >= config.businessHours.end) {
+      return {
+        success: false,
+        error: 'Selected time is outside business hours',
+      };
+    }
+    
+    // Check for conflicts with existing bookings
+    const existingBookings = await getUserBookings();
+    const newStart = new Date(bookingTime).getTime();
+    
+    for (const booking of existingBookings) {
+      const existingStart = new Date(booking.start).getTime();
+      if (existingStart === newStart) {
+        return {
+          success: false,
+          error: 'This time slot is already booked',
+        };
+      }
+    }
+    
+    // Prepare the booking time for the API
+    bookingTime = convertTimeToTimezone(bookingTime, timeZone, config.hostTimezone);
 
     const request: BookingRequest = {
       eventTypeId,
       start: bookingTime,
+      duration,
       attendee: {
         name,
         email,
@@ -103,8 +138,7 @@ export async function getBookingDetails(bookingUid: string): Promise<BookingResu
 }
 
 /**
- * Fetches bookings for a specific date
- * Optional: pass afterStart and beforeEnd to filter by date range
+ * Fetches bookings for a specific date range
  */
 export async function getUserBookings(
   afterStart?: string,

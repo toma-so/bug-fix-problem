@@ -38,10 +38,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Default to 30 minutes if not specified
+    const duration = body.duration || 30;
+
     // Simulate network delay
     await new Promise((resolve) => setTimeout(resolve, 200));
 
-    const booking = createBooking(body.eventTypeId, body.start, body.attendee);
+    const booking = createBooking(body.eventTypeId, body.start, duration, body.attendee);
 
     const response: CalcomBookingResponse = {
       status: 'success',

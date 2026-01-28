@@ -1,12 +1,13 @@
 // Mock Database for scheduling API
-// Uses JSON file for persistence so you can see bookings
+// Uses JSON file for persistence
 
 import { CalcomBooking, CalcomSlot } from '@/types';
+import { config } from './config';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Simulated slot duration in minutes
-const SLOT_DURATION = 30;
+// Slot interval in minutes
+const SLOT_INTERVAL = 30;
 const BOOKINGS_PER_PAGE = 5;
 
 // Path to the JSON file for bookings
@@ -81,49 +82,39 @@ function getTimezoneOffset(timezone: string): number {
   return offsets[timezone] ?? -8;
 }
 
-// Generate available slots for a given date with VARIED availability per day
-function generateSlotsForDate(date: Date, userTimezone: string): CalcomSlot[] {
-  const bookings = loadBookings();
+// Generate ALL possible slots for a date (9 AM - 5 PM in host timezone)
+// Returns raw slots - filtering is done by the service layer
+function generateSlotsForDate(date: Date): CalcomSlot[] {
   const dateStr = date.toISOString().split('T')[0];
   const random = seededRandom(dateSeed(dateStr));
 
-  const tzOffset = getTimezoneOffset(userTimezone);
-  const startHourUtc = 9 - tzOffset;
-  const endHourUtc = 17 - tzOffset;
+  // Generate slots in host's business hours (converted to UTC)
+  const tzOffset = getTimezoneOffset(config.hostTimezone);
+  const startHourUtc = config.businessHours.start - tzOffset;
+  const endHourUtc = config.businessHours.end - tzOffset;
 
   const allPossibleSlots: Date[] = [];
   for (let hour = startHourUtc; hour < endHourUtc; hour++) {
-    for (let minute = 0; minute < 60; minute += SLOT_DURATION) {
+    for (let minute = 0; minute < 60; minute += SLOT_INTERVAL) {
       const slotTime = new Date(date);
       slotTime.setUTCHours(hour, minute, 0, 0);
       allPossibleSlots.push(slotTime);
     }
   }
 
+  // Randomly select a subset of slots to simulate varying availability
   const numSlotsToday = Math.floor(random() * 7) + 6;
   const shuffled = [...allPossibleSlots].sort(() => random() - 0.5);
   const selectedSlots = shuffled.slice(0, numSlotsToday);
   selectedSlots.sort((a, b) => a.getTime() - b.getTime());
 
-  const slots: CalcomSlot[] = [];
-  for (const slotTime of selectedSlots) {
-    const slotIsoString = slotTime.toISOString();
-    const isBooked = Array.from(bookings.values()).some(
-      (booking) => booking.start === slotIsoString
-    );
-    if (!isBooked) {
-      slots.push({ time: slotIsoString });
-    }
-  }
-
-  return slots;
+  return selectedSlots.map(slot => ({ time: slot.toISOString() }));
 }
 
-// Generate slots for a date range
+// Generate slots for a date range (raw, unfiltered)
 export function generateSlotsForDateRange(
   startDate: string,
-  endDate: string,
-  timeZone: string
+  endDate: string
 ): { slots: CalcomSlot[]; totalCount: number } {
   const slots: CalcomSlot[] = [];
   const start = new Date(startDate);
@@ -133,7 +124,7 @@ export function generateSlotsForDateRange(
   currentDate.setUTCHours(0, 0, 0, 0);
 
   while (currentDate < end) {
-    const daySlots = generateSlotsForDate(currentDate, timeZone);
+    const daySlots = generateSlotsForDate(currentDate);
     for (const slot of daySlots) {
       const slotTime = new Date(slot.time);
       if (slotTime >= start && slotTime < end) {
@@ -146,14 +137,21 @@ export function generateSlotsForDateRange(
   return { slots, totalCount: slots.length };
 }
 
-// Get all slots
+// Get all slots for a date range (raw data)
 export function getAllSlots(
   startDate: string,
-  endDate: string,
-  timeZone: string
+  endDate: string
 ): { data: CalcomSlot[] } {
-  const { slots } = generateSlotsForDateRange(startDate, endDate, timeZone);
+  const { slots } = generateSlotsForDateRange(startDate, endDate);
   return { data: slots };
+}
+
+// Get all bookings (for filtering in service layer)
+export function getAllBookings(): CalcomBooking[] {
+  const bookings = loadBookings();
+  return Array.from(bookings.values()).sort(
+    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+  );
 }
 
 // Pagination response structure
@@ -208,10 +206,11 @@ export function getPaginatedBookings(
   return { data: pageBookings, pagination };
 }
 
-// Create a booking - SAVES TO JSON FILE
+// Create a booking
 export function createBooking(
   eventTypeId: number,
   start: string,
+  duration: number,
   attendee: { name: string; email: string; timeZone: string }
 ): CalcomBooking {
   const bookings = loadBookings();
@@ -220,7 +219,7 @@ export function createBooking(
   const uid = `booking_${Date.now()}_${id}`;
 
   const startDate = new Date(start);
-  const endDate = new Date(startDate.getTime() + SLOT_DURATION * 60 * 1000);
+  const endDate = new Date(startDate.getTime() + duration * 60 * 1000);
 
   const booking: CalcomBooking = {
     id,
@@ -228,6 +227,7 @@ export function createBooking(
     title: `Meeting with ${attendee.name}`,
     start,
     end: endDate.toISOString(),
+    duration,
     status: 'accepted',
     attendees: [attendee],
   };
@@ -240,6 +240,7 @@ export function createBooking(
   console.log(`   Title: ${booking.title}`);
   console.log(`   Start: ${booking.start}`);
   console.log(`   End: ${booking.end}`);
+  console.log(`   Duration: ${duration} minutes`);
   console.log(`   Attendee: ${attendee.name} (${attendee.email})`);
   console.log(`   Timezone: ${attendee.timeZone}\n`);
 
@@ -252,14 +253,6 @@ export function getBookingByUid(uid: string): CalcomBooking | undefined {
   return bookings.get(uid);
 }
 
-// Get all bookings
-export function getAllBookings(): CalcomBooking[] {
-  const bookings = loadBookings();
-  return Array.from(bookings.values()).sort(
-    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
-  );
-}
-
 // Clear all bookings
 export function clearBookings(): void {
   saveBookings(new Map());
@@ -269,7 +262,6 @@ export function clearBookings(): void {
 function initializeDemoBookings() {
   ensureDataDir();
   
-  // Check if we already have bookings
   const existing = loadBookings();
   if (existing.size > 0) {
     console.log(`\n📅 Loaded ${existing.size} existing bookings from ${BOOKINGS_FILE}\n`);
@@ -292,21 +284,19 @@ function initializeDemoBookings() {
   const random = seededRandom(42);
   const bookings = new Map<string, CalcomBooking>();
 
-  // Create bookings across the next 7 days
   for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
     const date = new Date(today);
     date.setDate(date.getDate() + dayOffset);
 
-    // Generate slots for this day (without checking existing bookings)
     const dateStr = date.toISOString().split('T')[0];
     const dayRandom = seededRandom(dateSeed(dateStr));
-    const tzOffset = getTimezoneOffset(defaultTimezone);
-    const startHourUtc = 9 - tzOffset;
-    const endHourUtc = 17 - tzOffset;
+    const tzOffset = getTimezoneOffset(config.hostTimezone);
+    const startHourUtc = config.businessHours.start - tzOffset;
+    const endHourUtc = config.businessHours.end - tzOffset;
 
     const allSlots: Date[] = [];
     for (let hour = startHourUtc; hour < endHourUtc; hour++) {
-      for (let minute = 0; minute < 60; minute += SLOT_DURATION) {
+      for (let minute = 0; minute < 60; minute += SLOT_INTERVAL) {
         const slotTime = new Date(date);
         slotTime.setUTCHours(hour, minute, 0, 0);
         allSlots.push(slotTime);
@@ -317,8 +307,10 @@ function initializeDemoBookings() {
     const shuffled = [...allSlots].sort(() => dayRandom() - 0.5);
     const daySlots = shuffled.slice(0, numSlotsToday);
 
-    // Book 4-7 slots per day
-    const numToBook = Math.floor(random() * 4) + 4;
+    // Vary bookings: days 0,2,4 have 2-4, days 1,3,5,6 have 6-8
+    const numToBook = dayOffset % 2 === 0 
+      ? Math.floor(random() * 3) + 2
+      : Math.floor(random() * 3) + 6;
     const usedIndices = new Set<number>();
 
     for (let i = 0; i < numToBook && usedIndices.size < daySlots.length; i++) {
@@ -334,15 +326,16 @@ function initializeDemoBookings() {
         const id = Math.floor(Math.random() * 100000);
         const uid = `demo_${dayOffset}_${i}_${id}`;
         const name = names[Math.floor(random() * names.length)];
-        const startDate = slotTime;
-        const endDate = new Date(startDate.getTime() + SLOT_DURATION * 60 * 1000);
+        const duration = random() > 0.7 ? 60 : 30;
+        const endDate = new Date(slotTime.getTime() + duration * 60 * 1000);
 
         const booking: CalcomBooking = {
           id,
           uid,
           title: `Meeting with ${name}`,
-          start: startDate.toISOString(),
+          start: slotTime.toISOString(),
           end: endDate.toISOString(),
+          duration,
           status: 'accepted',
           attendees: [{
             name,

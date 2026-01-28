@@ -20,6 +20,7 @@ export interface CalcomBooking {
   title: string;
   start: string; // ISO 8601 UTC
   end: string; // ISO 8601 UTC
+  duration: number; // Duration in minutes (30 or 60)
   status: 'accepted' | 'pending' | 'cancelled';
   attendees: Array<{
     name: string;
@@ -39,6 +40,7 @@ export interface TimeSlot {
 export interface BookingRequest {
   eventTypeId: number;
   start: string; // UTC ISO string
+  duration: number; // Duration in minutes (30 or 60)
   attendee: {
     name: string;
     email: string;

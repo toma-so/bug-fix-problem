@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
   await new Promise((resolve) => setTimeout(resolve, 100));
 
   try {
-    const { data } = getAllSlots(start, end, timeZone);
+    const { data } = getAllSlots(start, end);
 
     const response: CalcomSlotResponse = {
       status: 'success',

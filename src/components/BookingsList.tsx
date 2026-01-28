@@ -73,6 +73,10 @@ export function BookingsList({ timeZone, selectedDate, refreshTrigger }: Booking
                 <span className="font-medium">
                   {formatInTimeZone(booking.start, timeZone, 'h:mm a')}
                 </span>
+                {' '}
+                <span className="text-gray-400">
+                  ({booking.duration || 30} min)
+                </span>
               </p>
             </div>
             <span

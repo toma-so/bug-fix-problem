@@ -60,7 +60,7 @@ export function SchedulerPage() {
     setBookingError(null);
   };
 
-  const handleSubmitBooking = async (name: string, email: string) => {
+  const handleSubmitBooking = async (name: string, email: string, duration: number) => {
     if (!selectedSlot) return;
 
     setIsSubmitting(true);
@@ -72,7 +72,8 @@ export function SchedulerPage() {
         selectedSlot,
         name,
         email,
-        userTimeZone
+        userTimeZone,
+        duration
       );
 
       if (result.success) {
@@ -121,7 +122,10 @@ export function SchedulerPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Left column - Booking form */}
         <div>
-          <h1 className="text-2xl font-bold text-gray-800 mb-6">Book an Appointment</h1>
+          <h1 className="text-2xl font-bold text-gray-800 mb-4">Book an Appointment</h1>
+          <p className="text-sm text-gray-500 mb-6">
+            Schedule a meeting with our team (Central Time)
+          </p>
 
           <div className="mb-6">
             <h2 className="text-sm font-medium text-gray-600 mb-3">Select a date</h2>
